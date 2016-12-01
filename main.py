@@ -1,33 +1,36 @@
-from YHandler import YHandler, YQuery
-from pprint import pprint
+import logging
+from random import randint
+from flask import Flask, render_template
+from flask_ask import Ask, statement, question, session
+from standings import get_standings
 
-def get_standings():
-    ns = {'yh': 'http://fantasysports.yahooapis.com/fantasy/v2/base.rng'}
 
-    handler = YHandler()
-    query = YQuery(handler, 'nhl')
+app = Flask(__name__)
+ask = Ask(app, "/")
+logging.getLogger("flask_ask").setLevel(logging.DEBUG)
 
-    league = query.get_user_leagues()[0]
+@ask.launch
+def new_game():
+    welcome_msg = "Here are the standings for your fantasy league: "
+    for name in get_standings():
+        welcome_msg += name + ", "
+    return statement(welcome_msg)
 
-    #print league['name'], league['id']
+@ask.intent("YesIntent")
+def next_round():
+    numbers = [randint(0, 9) for _ in range(3)]
+    round_msg = render_template('round', numbers=numbers)
+    session.attributes['numbers'] = numbers[::-1]  # reverse
+    return question(round_msg)
 
-    standings = query.query_league(league['id'], "standings")
+@ask.intent("AnswerIntent", convert={'first': int, 'second': int, 'third': int})
+def answer(first, second, third):
+    winning_numbers = session.attributes['numbers']
+    if [first, second, third] == winning_numbers:
+        msg = render_template('win')
+    else:
+        msg = render_template('lose')
+    return statement(msg)
 
-    result = []
-    for team in standings.iter_select('.//yh:teams/yh:team', ns):
-        result.append(
-            team.select_one('./yh:name', ns).text
-        )
-    '''result.append({
-        'id': league.select_one('./yh:league_id', ns).text,
-        'name': league.select_one('./yh:name', ns).text,
-        'season': league.select_one('./yh:season', ns).text,
-        'week': league.select_one('./yh:current_week', ns).text,
-        'is_finished': (lambda val: True if val else False)(league.select_one('./yh:is_finished', ns).text)
-     })'''
-
-    #print result
-    #pprint(standings)
-    return result
-
-print get_standings()
+if __name__ == '__main__':
+    app.run(debug=True)
